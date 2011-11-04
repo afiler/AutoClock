@@ -1,9 +1,9 @@
 #include <Time.h>
 #include <TinyGPS.h>       //http://arduiniana.org/libraries/TinyGPS/
 //#include <NewSoftSerial.h>  //http://arduiniana.org/libraries/newsoftserial/
-// GPS and NewSoftSerial libraries are the work of Mikal Hart
 
 const byte START_PIN = 22;
+const int OFFSET = -8;   // offset hours from gps time (UTC)
 
 byte seven_seg_digits[10][7] = { 
 	{ 1,1,1,1,1,1,0 },  // = 0
@@ -18,13 +18,12 @@ byte seven_seg_digits[10][7] = {
 	{ 1,1,1,0,0,1,1 }   // = 9
 };
 
-
 TinyGPS gps; 
 //NewSoftSerial serial_gps =  NewSoftSerial(3, 2);  // receive on pin 3
 
 void printFloat(double f, int digits = 2);
 
-const int offset = 1;   // offset hours from gps time (UTC)
+
 time_t prevDisplay = 0; // when the digital clock was displayed
 
 char c;
@@ -53,18 +52,7 @@ void loop()
       //gpsdump(gps);
     }
   }
-  
-  //  tmElements_t tm;
-  //int year;
-  //unsigned long fix_age;
-  //gps.crack_datetime(&year, &tm.Month, &tm.Day, &tm.Hour, &tm.Minute, &tm.Second, NULL, &fix_age);
-  //snprintf(txt, 80, "%d/%d/%d %02d:%02d:%02d fix age: %d", year, tm.Month, tm.Day, tm.Hour, tm.Minute, tm.Second, fix_age);
-  //unsigned long date, time;
-  //gps.get_datetime(&date, &time);
-  //snprintf(txt, 80, "%d %d", date, time);
-  //Serial.println(txt);
-  //now();
-  
+
   //if(timeStatus()!= timeNotSet) 
   //{
      if( now() != prevDisplay) //update the display only if the time has changed
@@ -88,7 +76,12 @@ void digitalClockDisplay(){
   Serial.print(month());
   Serial.print(" ");
   Serial.print(year()); 
-  Serial.println("\n"); 
+  Serial.println("\n");
+  
+  sevenSegWrite(0, hour() / 10);
+  sevenSegWrite(1, hour() % 10);
+  sevenSegWrite(2, minute() / 10);
+  sevenSegWrite(3, minute() % 10);
 }
 
 void printDigits(int digits){
@@ -117,7 +110,7 @@ time_t gpsTimeToArduinoTime(){
   gps.crack_datetime(&year, &tm.Month, &tm.Day, &tm.Hour, &tm.Minute, &tm.Second, NULL, NULL);
   tm.Year = year - 1970; 
   time_t time = makeTime(tm);
-  return time + (offset * SECS_PER_HOUR);
+  return time + (OFFSET * SECS_PER_HOUR);
 }
 
 
