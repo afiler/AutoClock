@@ -18,6 +18,15 @@ byte seven_seg_digits[10][7] = {
 	{ 1,1,1,0,0,1,1 }   // = 9
 };
 
+byte tenHrPins[] = { 0, 30, 31, 0, 0, 0, 0 };
+byte hrPins[] = { 34, 35, 38, 37, 36, 32, 33 };
+byte tenMinPins[] = { 43, 44, 47, 45, 46, 41, 42 };
+byte minPins[] = { 50, 51, 22, 23, 52, 48, 49 };
+byte colonPin1 = 39;
+byte colonPin2 = 40;
+byte amPin = 24;
+byte pnPin = 25;
+
 TinyGPS gps; 
 //NewSoftSerial serial_gps =  NewSoftSerial(3, 2);  // receive on pin 3
 
@@ -33,7 +42,8 @@ void setup()
 {
   for (int i=START_PIN; i<=START_PIN+30; i++) pinMode(i, OUTPUT);
    
-  Serial.begin(4800);
+  Serial.begin(9600);
+  Serial1.begin(4800);
   //serial_gps.begin(4800);
   Serial.println("Waiting for GPS time ... ");
   setSyncProvider(gpsTimeSync);
@@ -43,10 +53,10 @@ void loop()
 {
   bool dataReceived = 0;
   
-  while (Serial.available()) 
+  while (Serial1.available()) 
   {
-    c = (char)Serial.read();
-    //Serial.print(c, BYTE);
+    c = (char)Serial1.read();
+    Serial.print(c, BYTE);
     if (gps.encode(c)) { // process gps messages
       dataReceived = 1;
       //gpsdump(gps);
@@ -65,9 +75,14 @@ void loop()
 }
 
 void digitalClockDisplay(){
-  // digital clock display of the time
+  int tenHr = ((hour() - 1) % 12 + 1) / 10;
+  int oneHr = ((hour() - 1) % 12 + 1) % 10;
+  
+  /* // digital clock display of the time
   Serial.print("\n****** ");
-  Serial.print(hour());
+  //Serial.print(hour());
+  Serial.print(tenHr, DEC);
+  Serial.print(oneHr, DEC);
   printDigits(minute());
   printDigits(second());
   Serial.print(" ");
@@ -76,12 +91,17 @@ void digitalClockDisplay(){
   Serial.print(month());
   Serial.print(" ");
   Serial.print(year()); 
-  Serial.println("\n");
+  Serial.println("\n"); */
   
-  sevenSegWrite(0, hour() / 10);
-  sevenSegWrite(1, hour() % 10);
-  sevenSegWrite(2, minute() / 10);
-  sevenSegWrite(3, minute() % 10);
+  sevenSegWrite(tenHrPins, tenHr ? tenHr : -1);
+  sevenSegWrite(hrPins, oneHr);
+  sevenSegWrite(tenMinPins, minute() / 10);
+  sevenSegWrite(minPins, minute() % 10);
+  
+  digitalWrite(colonPin1, second() % 2);
+  digitalWrite(colonPin2, (second() + 1) % 2);
+  
+  setTime(gpsTimeSync());
 }
 
 void printDigits(int digits){
@@ -93,17 +113,18 @@ void printDigits(int digits){
 }
 
 time_t gpsTimeSync(){
-  //Serial.println("gpsTimeSync");
+  Serial.println("gpsTimeSync");
   //  returns time if avail from gps, else returns 0
   unsigned long fix_age = 0 ;
-  gps.get_datetime(NULL,NULL, &fix_age);
+  gps.get_new_datetime(NULL,NULL, &fix_age);
   unsigned long time_since_last_fix;
-  if(fix_age < 1000)
+  //if(fix_age < 1000)
     return gpsTimeToArduinoTime(); // return time only if updated recently by gps  
-  return 0;
+  //return 0;
 }
 
 time_t gpsTimeToArduinoTime(){
+  Serial.println("gpsTimeToArduinoTime");
   // returns time_t from gps date and time with the given offset hours
   tmElements_t tm;
   int year;
@@ -206,11 +227,9 @@ bool feedgps()
   return false;
 }
 
-void sevenSegWrite(byte pos, byte digit) {
-  byte pin = 7*pos+START_PIN;
-  for (byte segCount = 0; segCount < 7; ++segCount) {
-    digitalWrite(pin, seven_seg_digits[digit][segCount]);
-    ++pin;
+void sevenSegWrite(byte pos[], byte digit) {
+  for (byte seg = 0; seg < 7; ++seg) {
+    digitalWrite(pos[seg], digit >= 0 && digit < 10 ? seven_seg_digits[digit][seg] : 0);
   }
 }
 
