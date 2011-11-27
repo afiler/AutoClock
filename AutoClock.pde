@@ -2,6 +2,10 @@
 #include <TinyGPS.h>       //http://arduiniana.org/libraries/TinyGPS/
 //#include <NewSoftSerial.h>  //http://arduiniana.org/libraries/newsoftserial/
 
+#define TIME_MSG_LEN  11   // time sync to PC is HEADER followed by Unix time_t as ten ASCII digits
+#define TIME_HEADER  'T'   // Header tag for serial time sync message
+#define TIME_REQUEST  7    // ASCII bell character requests a time sync message
+
 const byte START_PIN = 22;
 const int OFFSET = -8;   // offset hours from gps time (UTC)
 
@@ -27,6 +31,8 @@ byte colonPin2 = 40;
 byte amPin = 24;
 byte pnPin = 25;
 
+boolean tickTock = 0;
+
 TinyGPS gps; 
 //NewSoftSerial serial_gps =  NewSoftSerial(3, 2);  // receive on pin 3
 
@@ -40,6 +46,8 @@ char txt[80] = "";
 
 void setup()
 {
+  pinMode(29, OUTPUT);
+  
   for (int i=START_PIN; i<=START_PIN+30; i++) pinMode(i, OUTPUT);
    
   Serial.begin(9600);
@@ -52,6 +60,8 @@ void setup()
 void loop()
 {
   bool dataReceived = 0;
+  
+  if(Serial.available()) processSyncMessage();
   
   while (Serial1.available()) 
   {
@@ -67,6 +77,7 @@ void loop()
   //{
      if( now() != prevDisplay) //update the display only if the time has changed
      {
+       tock();
        prevDisplay = now();
        digitalClockDisplay();
        dataReceived = 0;
@@ -74,7 +85,16 @@ void loop()
   //}	 
 }
 
+void tock() {
+  tickTock = tickTock ? 0 : 1;
+  digitalWrite(29, tickTock);
+  /* digitalWrite(29, 1);
+  delay(15);
+  digitalWrite(29, 0); */
+}
+
 void digitalClockDisplay(){
+  time_t newTime;
   int tenHr = ((hour() - 1) % 12 + 1) / 10;
   int oneHr = ((hour() - 1) % 12 + 1) % 10;
   
@@ -101,7 +121,8 @@ void digitalClockDisplay(){
   digitalWrite(colonPin1, second() % 2);
   digitalWrite(colonPin2, (second() + 1) % 2);
   
-  setTime(gpsTimeSync());
+  newTime = gpsTimeSync();
+  if (newTime) setTime(newTime);
 }
 
 void printDigits(int digits){
@@ -113,7 +134,7 @@ void printDigits(int digits){
 }
 
 time_t gpsTimeSync(){
-  Serial.println("gpsTimeSync");
+  //Serial.println("gpsTimeSync");
   //  returns time if avail from gps, else returns 0
   unsigned long fix_age = 0 ;
   gps.get_new_datetime(NULL,NULL, &fix_age);
@@ -124,17 +145,36 @@ time_t gpsTimeSync(){
 }
 
 time_t gpsTimeToArduinoTime(){
-  Serial.println("gpsTimeToArduinoTime");
+  //Serial.println("gpsTimeToArduinoTime");
   // returns time_t from gps date and time with the given offset hours
   tmElements_t tm;
   int year;
   gps.crack_datetime(&year, &tm.Month, &tm.Day, &tm.Hour, &tm.Minute, &tm.Second, NULL, NULL);
+  
+  if (year == 1970) return 0;
+  
   tm.Year = year - 1970; 
   time_t time = makeTime(tm);
   return time + (OFFSET * SECS_PER_HOUR);
 }
 
-
+void processSyncMessage() {
+  // if time sync available from serial port, update time and return true
+  while(Serial.available() >=  TIME_MSG_LEN ){  // time message consists of header & 10 ASCII digits
+    char c = Serial.read() ;
+    Serial.print(c);  
+    if( c == TIME_HEADER ) {      
+      time_t pctime = 0;
+      for(int i=0; i < TIME_MSG_LEN -1; i++){  
+        c = Serial.read();          
+        if( c >= '0' && c <= '9'){  
+          pctime = (10 * pctime) + (c - '0') ; // convert digits to a number    
+        }
+      }  
+      setTime(pctime);   // Sync Arduino clock to the time received on the serial port
+    }  
+  }
+}
 
 
 void printFloat(double number, int digits)
