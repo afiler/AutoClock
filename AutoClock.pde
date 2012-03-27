@@ -2,12 +2,16 @@
 #include <TinyGPS.h>       //http://arduiniana.org/libraries/TinyGPS/
 //#include <NewSoftSerial.h>  //http://arduiniana.org/libraries/newsoftserial/
 
+#include <TimerOne.h>
+
 #define TIME_MSG_LEN  11   // time sync to PC is HEADER followed by Unix time_t as ten ASCII digits
 #define TIME_HEADER  'T'   // Header tag for serial time sync message
 #define TIME_REQUEST  7    // ASCII bell character requests a time sync message
 
 const byte START_PIN = 22;
-const int OFFSET = -8;   // offset hours from gps time (UTC)
+const int OFFSET = -7;   // offset hours from gps time (UTC)
+
+const byte RELAY_PIN = 2;
 
 byte seven_seg_digits[10][7] = { 
 	{ 1,1,1,1,1,1,0 },  // = 0
@@ -29,9 +33,16 @@ byte minPins[] = { 50, 51, 22, 23, 52, 48, 49 };
 byte colonPin1 = 39;
 byte colonPin2 = 40;
 byte amPin = 24;
-byte pnPin = 25;
+byte pmPin = 25;
 
+
+boolean makeNoise = 0;
+boolean debugGps = 0;
+
+
+byte hundredMs = 0;
 boolean tickTock = 0;
+boolean halfTick = 0;
 
 TinyGPS gps; 
 //NewSoftSerial serial_gps =  NewSoftSerial(3, 2);  // receive on pin 3
@@ -46,7 +57,7 @@ char txt[80] = "";
 
 void setup()
 {
-  pinMode(29, OUTPUT);
+  pinMode(RELAY_PIN, OUTPUT);
   
   for (int i=START_PIN; i<=START_PIN+30; i++) pinMode(i, OUTPUT);
    
@@ -55,42 +66,43 @@ void setup()
   //serial_gps.begin(4800);
   Serial.println("Waiting for GPS time ... ");
   setSyncProvider(gpsTimeSync);
+  
+  //Timer1.initialize(1000000);
+  //Timer1.initialize(500000);
+  Timer1.initialize(1000000);
+  Timer1.attachInterrupt(tock);
 }
 
-void loop()
-{
-  bool dataReceived = 0;
-  
+void loop() {
   if(Serial.available()) processSyncMessage();
+  //while (Serial1.available()) gps.encode((char)Serial1.read());
   
-  while (Serial1.available()) 
-  {
+  char c;
+  
+  while (Serial1.available()) {
     c = (char)Serial1.read();
-    Serial.print(c, BYTE);
-    if (gps.encode(c)) { // process gps messages
-      dataReceived = 1;
-      //gpsdump(gps);
-    }
+    if (debugGps) Serial.print(c);
+    gps.encode(c);
   }
-
-  //if(timeStatus()!= timeNotSet) 
-  //{
-     if( now() != prevDisplay) //update the display only if the time has changed
-     {
-       tock();
-       prevDisplay = now();
-       digitalClockDisplay();
-       dataReceived = 0;
-     }
-  //}	 
+  
 }
 
 void tock() {
+  digitalWrite(colonPin1, second() % 2);
+  digitalWrite(colonPin2, second() % 2);
+  //digitalWrite(colonPin2, (second() + 1) % 2);
+
+  //halfTick = halfTick ? 0 : 1;
+  //if (halfTick) return;
+  
   tickTock = tickTock ? 0 : 1;
-  digitalWrite(29, tickTock);
+  if (makeNoise) digitalWrite(RELAY_PIN, tickTock);
+  digitalWrite(13, tickTock);
   /* digitalWrite(29, 1);
   delay(15);
   digitalWrite(29, 0); */
+  tickTock ? Serial.println("tick") :  Serial.println("tock");
+  digitalClockDisplay();
 }
 
 void digitalClockDisplay(){
@@ -118,8 +130,8 @@ void digitalClockDisplay(){
   sevenSegWrite(tenMinPins, minute() / 10);
   sevenSegWrite(minPins, minute() % 10);
   
-  digitalWrite(colonPin1, second() % 2);
-  digitalWrite(colonPin2, (second() + 1) % 2);
+//  digitalWrite(colonPin1, second() % 2);
+//  digitalWrite(colonPin2, (second() + 1) % 2);
   
   newTime = gpsTimeSync();
   if (newTime) setTime(newTime);
@@ -151,7 +163,7 @@ time_t gpsTimeToArduinoTime(){
   int year;
   gps.crack_datetime(&year, &tm.Month, &tm.Day, &tm.Hour, &tm.Minute, &tm.Second, NULL, NULL);
   
-  if (year == 1970) return 0;
+  if (year < 2012) return 0;
   
   tm.Year = year - 1970; 
   time_t time = makeTime(tm);
@@ -171,7 +183,7 @@ void processSyncMessage() {
           pctime = (10 * pctime) + (c - '0') ; // convert digits to a number    
         }
       }  
-      setTime(pctime);   // Sync Arduino clock to the time received on the serial port
+        setTime(pctime);   // Sync Arduino clock to the time received on the serial port
     }  
   }
 }
@@ -257,10 +269,8 @@ void gpsdump(TinyGPS &gps)
   Serial.print("Stats: characters: "); Serial.print(chars); Serial.print(" sentences: "); Serial.print(sentences); Serial.print(" failed checksum: "); Serial.println(failed);
 }
   
-bool feedgps()
-{
-  while (Serial.available())
-  {
+bool feedgps() {
+  while (Serial.available()) {
     if (gps.encode(Serial.read()))
       return true;
   }
